@@ -1,0 +1,20 @@
+
+model{
+      #Likelihood
+      for(i in 1:n){
+            logit(P[i]) <- int[class[i]] + inprod(s.effects[], S[i,])
+            env[i] <- P[i] * Hum.bit[i]
+            P.r[i] <- r/(r + env[i])
+            Hum.env[i] ~ dnegbin(P.r[i], r)
+      }
+
+      #Priors
+      for(j in 1:n.species){
+            s.effects[j] ~ dnorm(0, 1.0E-3)
+      }
+
+      for(k in 1:n.classes){int[k] ~ dnorm(0, 1.0E-3)}
+
+      r ~ dunif(0, 50)
+}
+

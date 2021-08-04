@@ -1,0 +1,5 @@
+"0","library(raster); library(rgdal); library(R2jags); library(SpatialPack); library(readODS)"
+"2","Error: package or namespace load failed for ‘rgdal’ in dyn.load(file, DLLpath = DLLpath, ...):
+ unable to load shared object '/home/gerardo/R/x86_64-pc-linux-gnu-library/4.0/rgdal/libs/rgdal.so':
+  libgdal.so.27: no se puede abrir el archivo del objeto compartido: No existe el archivo o el directorio
+"

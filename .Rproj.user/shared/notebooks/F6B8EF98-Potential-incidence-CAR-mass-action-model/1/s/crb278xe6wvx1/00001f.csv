@@ -1,0 +1,1 @@
+"0","text(x = 120, y = 320, paste0(""r = "", round(cor.bite$corr, 2), "" d.f. = "", round(cor.bite$dof, 2), "", P = "", round(cor.bite$p.value,2)))"

@@ -1,0 +1,602 @@
+---
+title: 'Snakebite incidence: Simple mass action model'
+author: "Gerardo Martin"
+date: "7th June 2019"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r loading packages, message=FALSE, results="hide", include = F}
+library(raster); library(rgdal); library(R2jags); library(SpatialPack); library(readODS)
+
+bites.incidence <- readRDS("../Model-results/Snakebites-mass-action-NIMBLE-model.rds")
+
+incid.data <- read.csv("../Data/Incid-data.csv")[, -1]
+
+expert.indices <- read.csv("../Data/Agressivenes-indices.csv")
+
+snake.pars <- read.csv("../Data/Parameters-questions.csv")
+rel.abund <- with(snake.pars, Density_5k)
+
+S <- as.matrix(incid.data[, 3:9])
+max.s <- apply(S, 2, max)
+S <- sweep(S, 2, max.s, "/")
+S <- sweep(S, 2, expert.indices$Agressiveness/10 * rel.abund, "*")
+
+Hum.log <- log(incid.data$hum.pop)
+
+incid.data$log.hum <- Hum.log
+```
+
+
+# Intro and Methods
+
+These are the results of the *simple mass action* model, in which snakebites result from:
+
+$$\frac{dH_{bitten}}{dt} = \beta S H$$
+
+and where
+
+$$S = \sum_{i = 1}^{n} A_i I_i S_i$$
+
+That is, the sum of all snake species' $i$ abundance weighted by the aggressiveness indices $A_i$ and an estimated effect $I_i$ for estimating other effects. $H$ is human population density and $\beta$ is the contact rate.
+
+I estimated parameters by discretising the above model, to estimate the probability that snakebites occur during the time where data was collected:
+
+$$H_{bitten, t + 1} = H_{bitten, t} + H_t \times \left( 1 - \exp(- \beta S_t) \right)$$
+
+Hence $H_{bitten, t + 1} - H_{bitten, t}$ is the number of snakebites that occur during one year.
+
+To include the effect of land cover on snakebite incidence, I used the most frequent land cover classes between 2004 and 2017, and estimated the parameter $\beta$ of the model for each land cover class, and transformed it into a function of human population density to correct snake abundance in relation to humans. The actual final equation was:
+
+$$
+\beta(L, H) = \exp \left( \beta_{0, l} + \beta_{1, l}  \ln(H)^2 \right)
+$$
+# Results
+
+## Model summary
+
+### Fixed effects
+```{r}
+library(foreach)
+fixed.effects <- lapply(bites.incidence, function(x1){x1[, 1:22]})
+
+gel.diag <- gelman.diag(as.mcmc.list(fixed.effects))
+
+sum.inc.pars <- foreach(i = 1:22, .combine = rbind) %do% {
+    med <- median(c(fixed.effects[[1]][, i], fixed.effects[[2]][, i], fixed.effects[[3]][, i]))
+    std.dev <- sd(c(fixed.effects[[1]][, i], fixed.effects[[2]][, i], fixed.effects[[3]][, i]))
+    cr.int <- HPDinterval(as.mcmc(fixed.effects[[1]][, i], x1[[2]][, i], fixed.effects[[3]][, i]), 0.95)
+    return(c(med, std.dev, cr.int))
+}
+
+sum.inc.pars <- data.frame(sum.inc.pars)
+names(sum.inc.pars) <- c("Median", "Std.Dev", "Cr.025", "Cr.975")
+sum.inc.pars$Gelman.conv <- gel.diag$psrf[, 2]
+
+rownames(sum.inc.pars) <- colnames(fixed.effects[[1]])
+knitr::kable(sum.inc.pars)
+```
+
+### Random effects
+
+```{r}
+random.effects <- lapply(bites.incidence, function(x1){x1[, 23:3079]})
+diag.rho <- geweke.diag(random.effects)
+
+rho <- rbind(random.effects[[1]], random.effects[[2]], random.effects[[3]])
+rho <- apply(rho, 2, median)
+
+rho.r <- rasterFromXYZ(data.frame(incid.data[, c("x", "y")], rho))
+rho.diag <- rasterFromXYZ(data.frame(incid.data[, c("x", "y")], diag.rho$z))
+rho.stack <- stack(rho.r, rho.diag)
+names(rho.stack) <- c("rho", "Geweke convergence")
+
+plot(rho.stack)
+```
+
+## Model predictions
+
+```{r}
+x.full <- rbind(fixed.effects[[1]], fixed.effects[[2]], fixed.effects[[3]])
+
+x.beta0 <- x.full[, paste0("beta0[", 1:5, "]")]
+x.beta1 <- x.full[, paste0("beta1[", 1:5, "]")]
+x.indices <- x.full[, paste0("indices[", 1:7, "]")]
+x.rho <- rbind(random.effects[[1]], random.effects[[2]], random.effects[[3]])
+
+s.preds <- apply(x.indices, 1, function(x){
+    rowSums(sweep(S, MARGIN = 2, x, FUN = "*"))
+})
+
+library(foreach)
+hu.ef <- foreach(i = 1:3000, .combine = cbind) %do%{
+        exp(x.beta0[i, incid.data$land.cover] + x.beta1[i, incid.data$land.cover] * Hum.log^2)
+}
+    
+inc.preds <- (1 - exp(-s.preds * hu.ef)) * exp(t(x.rho))
+
+inc.sum <- data.frame(t(apply(inc.preds, 1, function(x){HPDinterval(as.mcmc(x), prob = 0.5)})))
+names(inc.sum) <- c("id", "incid")
+```
+
+
+```{r The incidence function, warning=F, echo=FALSE}
+incid.fun <- function(H.log, H.tot, Species, beta0, beta1, indices){
+      S.sum <- apply(indices/100, 1, function(x){sum(x * Species)})      
+      Beta <- exp(log(100) + beta0 + beta1 * H.log^2)
+      P <-1 - exp(-Beta * S.sum)
+      H.bit <- P * H.tot
+      return(H.bit)
+}
+```
+
+The result of running the function is the number of snakebite cases (`H.bit`) predicted by the model.
+
+From the JAGS object and the function I transformed the median of the posterior estimates into a raster object. Then to see the spatial pattern of incidence I divided the median of posteriors by the human population density.
+
+```{r, message = F, results = "hide", echo=F, warning=F,  include=F}
+incid.data$hum.bites <- with(incid.data, hum.pop * bites)
+bit.inc.data <- rasterFromXYZ(incid.data[,c("x", "y", "bites")])
+hum.pop.r <- rasterFromXYZ(incid.data[,c("x", "y", "hum.pop")])
+
+bit.inc.model <- rasterFromXYZ(data.frame(incid.data[, c("x", "y")], inc.sum$incid))
+
+bites <- stack(hum.pop.r * bit.inc.model, hum.pop.r * bit.inc.data)
+bite.incid <- stack(bit.inc.model, bit.inc.data)
+
+names(bites) <- c("Model", "Data")
+names(bite.incid) <- c("Model", "Data")
+```
+
+First here is the total number of snakebites estimated by the model (left) and the number of snakebites used as data (right). The colourscale of both maps is the same.
+
+```{r Number of snakebites, fig.height=6.5, fig.width=8, message=F, echo = F, fig.cap="Number of snakebites predicted by the model and snakebites used as data to fil the model."}
+
+library(rasterVis); library(RColorBrewer)
+
+jet.2 <- colorRampPalette(c("navy","forestgreen", "darkgoldenrod1", "darkorange3"))
+another.1 <- colorRampPalette(c("midnightblue",
+                              "turquoise3",
+                              "violetred3",
+                              "goldenrod1",
+                              "grey95"))
+another <- colorRampPalette(c("midnightblue",
+                              "turquoise3",
+                              "violetred3",
+                              "yellow1"))
+cool <- colorRampPalette(c("orangered1", "goldenrod1", "darkturquoise"))
+
+levelplot(bites, col.regions = rev(another.1(100)), at = seq(0, 400, len = 100),  main = "Number of snakebites")
+```
+
+Then the pattern of snakebite incidence after dividing the above layers by human population density is:
+
+```{r Snakebite incidence, fig.height=6.5, fig.width=8, message=F, echo = F, fig.cap="Snakebite incidence patterns predicted by the model and snakebite incidence used as data to fit the model."}
+cool <- colorRampPalette(c("orangered1", "goldenrod1", "darkturquoise"))
+levelplot(bite.incid, col.regions = rev(cool(100)), at = seq(0, 0.012, len = 100), main = "Snakebite incidence")
+```
+
+There are obvious differences between the model predictions and data, but below is a mroe formal assessment of the discrepancies between model and data. I first did a correlation test between the number of bites of the model and the data, and between incidence prediction and observed.
+
+```{r Plotting the correlaitons, echo=F, fig.height=4, fig.width=8, message=FALSE, inlude=T, fig.cap = "Correlation between model and data for both snakebites and incidence."}
+library(scales)
+
+cor.tests.df <- data.frame(rasterToPoints(stack(bites, bite.incid)))
+
+names(cor.tests.df) <- c("x", "y", "Model.bites", "Data.bites", "Model.incidence", "Data.incidence")
+
+cor.incid <- modified.ttest(cor.tests.df$Model.incidence,
+                            cor.tests.df$Data.incidence,
+                            cor.tests.df[, c("x", "y")])
+cor.bite <- modified.ttest(cor.tests.df$Model.bites, 
+                           cor.tests.df$Data.bites,
+                           cor.tests.df[, c("x", "y")])
+
+par(mfrow = c(1,2))
+plot(cor.tests.df$Data.bites, cor.tests.df$Model.bites, main = "Number of snakebites",
+     xlab = "Data",
+     ylab = "Model",  pch = 20, col = alpha("grey70", 0.5), cex = 1.5)
+abline(a = 0, b = 1, col = "orangered1", lwd = 2.5)
+text(x = 120, y = 320, paste0("r = ", round(cor.bite$corr, 2), " d.f. = ", round(cor.bite$dof, 2), ", P = ", round(cor.bite$p.value,2)))
+
+lo.no.bit <- loess(cor.tests.df$Data.bites ~ cor.tests.df$Model.bites, span = 0.1)
+lo.no.bitpred <- predict(lo.no.bit, newdata = seq(0, 360, len = 100))
+lines(seq(0, 360, len = 100), lo.no.bitpred, lty = 2, lwd = 3, col = "darkturquoise")
+
+plot(cor.tests.df$Data.incidence, cor.tests.df$Model.incidence, main = "Snakebite incidence", 
+     xlab = "Data", ylab = "",  pch = 20, 
+     xlim = c(0, 0.013), ylim = c(0, 0.013),
+     col = alpha("grey70", 0.5), cex = 1.5)
+abline(a = 0, b = 1, col = "orangered1", lwd = 2.5)
+text(x = 0.005, y = 0.0065, paste0("r = ", round(cor.incid$corr, 2), " d.f. = ", round(cor.incid$dof, 1), ", P = ", round(cor.incid$p.value, 2)))
+
+lo.inc.bit <- loess(cor.tests.df$Data.incidence ~ cor.tests.df$Model.incidence, span = 0.1)
+lo.inc.pred <- predict(lo.inc.bit, newdata = seq(0, 0.016, len = 100))
+lines(seq(0, 0.015, len = 100), lo.inc.pred,  lty = 2, lwd = 3, col = "darkturquoise")
+
+```
+The orange line represents the perfect regression line (intercept zero and a slope one). The dashed green line is the scatter plot smoothing with a scale (smoothing) parameter of 0.1. The numbers in each plot are the estimated correlation coefficient and the significance adjusted for spatial autcorrelation.
+
+```{r fig.height=4, fig.width=8, echo = F,fig.cap = "Comparison of the statistical distribution of the number of snakebites and snakebite incidence with the data. Adherence of quantiles to a straight line (ref reference line), indicates similar distributions."}
+
+par(mfrow = c(1, 2))
+qqplot(x = cor.tests.df$Data.bites, y = cor.tests.df$Model.bites, main = "QQ plot-bites",
+       xlab = "Data", ylab = "Model")
+abline(a = 0, b = 1, col = "red")
+
+qqplot(x = cor.tests.df$Data.incidence, y = cor.tests.df$Model.incidence, main = "QQ plot-incidence",
+       xlab = "Data", ylab = "Model",
+       xlim = c(0, 0.013), ylim = c(0, 0.013))
+abline(a = 0, b = 1, col = "red")
+```
+
+These two plots are a comparison of the distribution of both data, that generated by the model, and the source data used to fit the model. Given that both, snakebites and incidence are close to a straight lines in both plots, the model generated a distribution that is very close to that of the source data.
+
+## Relationship of indices estimated indices and expert-derived information
+
+This is the comparison of the fitted effects and the agressiveness and relative abundance adjustments used previously to explain snakebites.
+
+```{r Analysis of indices, fig.height=4, fig.width=5,echo=F}
+library(reshape2); library(readODS); library(ggplot2)
+
+indices <- x.full[, paste0("indices[", 1:7,"]")]
+indices.df <- data.frame(indices)
+
+names(indices.df) <- c("Bungarus caeruleus", "Bungarus ceylonicus",
+                       "Daboia russelii", "Echis carinatus",
+                       "Hypnale spp.", "Naja naja",
+                       "Trimeresurus trigonocephalus")
+aggres <- read.csv("../Data/Agressivenes-indices.csv")
+snake.pars <- read.csv("../Data/Parameters-questions.csv")
+
+rel.abund <- snake.pars$Density_5k
+aggr <- aggres$Agressiveness/10
+
+abund.agr <- rel.abund * aggr
+abund.agr.df <- data.frame(Spp = names(indices.df),
+                           abund.agr = abund.agr)
+
+ind.melt <- melt(indices.df, 
+                 value.name = "Indices", 
+                 measure.vars = names(indices.df)
+                 )
+
+ind.melt$Abund.agr <- sapply(1:nrow(ind.melt), 
+                             function(x){
+                                   abund.agr.df$abund.agr[abund.agr.df$Spp == ind.melt$variable[x]]
+                             })
+
+ind.melt$aggressiveness <- sapply(1:nrow(ind.melt), 
+                             function(x){
+                                   aggr[abund.agr.df$Spp == ind.melt$variable[x]]
+                             })
+ind.melt$rel.abund <- sapply(1:nrow(ind.melt), 
+                             function(x){
+                                   rel.abund[abund.agr.df$Spp == ind.melt$variable[x]]
+                             })
+```
+
+```{r fig.height=4, fig.width=6, echo = F}
+ggplot(ind.melt) + geom_boxplot(aes(x = log10(Abund.agr), y = Indices * aggressiveness/100, fill = variable, colour = variable), alpha = 0.6) +
+  labs(x = "log10 Relative abundance x aggressiveness",
+       y = "Fitted effect")
+```
+
+```{r fig.height=4, fig.width=6, echo = F}
+ggplot(ind.melt) + geom_boxplot(aes(x = aggressiveness, y = Indices * aggressiveness/100, fill = variable, colour = variable), alpha = 0.6) +
+  labs(x = "Aggressiveness",
+       y = "Fitted effect")
+```
+
+```{r fig.height=4, fig.width=6, echo = F, fig.cap="Relationship between relative abundance and aggressiveness weightings, aggressiveness only, and relative abundance-only weightings with estimated contact rates for each snake species."}
+ggplot(ind.melt) + geom_boxplot(aes(x = log10(rel.abund), y = Indices * aggressiveness/100, fill = variable, colour = variable), alpha = 0.6) +
+  labs(x = "log10 Relative abundance",
+       y = "Fitted effect")
+```
+
+
+## Analysis of residuals
+
+As with all regression exercises, residuals should be normally distributed. Here are a series of diagnostic plots.
+
+```{r Residuals, fig.height=4, fig.width=12, warning=F, echo=F, fig.cap="Distribution of model residuals and relationship between residuals and data."}
+
+resids <- with(cor.tests.df, Data.bites - Model.bites)
+par(mfrow = c(1, 3))
+plot(density(na.omit(resids)/sd(resids)), main = "Density of standardised residuals")
+
+plot(cor.tests.df$Model.bites, resids/sd(resids), main = "Residuals vs bites", xlab = "Predicted number of bites", ylab = "Standardised residuals",
+     pch = 20, col = "grey90", cex = 0.75)
+abline(h = 0, col = "orangered1", lwd = 1.5)
+
+plot(cor.tests.df$Model.bites, resids/na.omit(cor.tests.df$Model.bites), main = "Scale of model deviations from data", xlab = "Predicted number of bites", ylab = "Residuals / Number of bites",
+     pch = 20, col = "grey90", cex = 0.75)
+abline(h = 0, col = "orangered1", lwd = 1.5)
+```
+The first one shows the density of residuals, which was obtained by subtracting the observed number of snakebites from the median of model posterior estimates. Then in the second I see whether there is some non-linearity between residuals and predicted values. As with correlation plots, the orange line represents the gold standard and the green dashed line the actual trend. For the most part residuals follow a linear pattern with predicted values, but residuals increase towards largest predicted values. This is in agreement with the longer tail on the left side of the density plot (far left). The third plot, shows the predicted values against the residuals divided by the observed number of bites. This represents the number of times that model predictions are greater or smaller than they should be. As evidenced by the green dashed line, the model tends to overestimate at smaller number of snakebites.
+
+### Residuals in space:
+
+The first assumption in a regression procedure is that all data re independent. With spatial data this assumption is easily violated. Thus here I plotted the standardised residuals in space to see whether there is any clustering or the presence of other factors that we did not account for.
+
+```{r Residuals in space, fig.height=6.5, fig.width=8, warning = F, echo = F, fig.cap = "Spatial patterns of residuals for the number of snakebites and incidence."}
+
+resid.bit.r <- rasterFromXYZ(data.frame(incid.data[, c("x", "y")], resids))/sd(resids)
+resid.incid.r <- rasterFromXYZ(data.frame(incid.data[, c("x", "y")],
+                                          with(cor.tests.df, Data.incidence - Model.incidence)))
+
+resid.incid.r <- resid.incid.r/cellStats(resid.incid.r, sd)
+
+resids.r <- stack(resid.bit.r, resid.incid.r)
+names(resids.r) <- c("Number of bites", "Incidence")
+
+levelplot(resids.r, main = "Standardised residuals",
+          col.regions = cool(50), 
+          at = seq(-12, 7, len = 50), margin = F, contour = F)
+```
+
+The left side shows the standardised residuals of snakebite numbers, and the residuals of incidence on the right hand side. In both cases residuals are close to zero, but depart from the mean by as much as 12 standard deviations, and tend to be clustered. The predominantly negative values mean that the model underestimates both the number of snakebites and incidence, especially in areas where incidence is high.
+
+The absolute deviation between data and the model is further presented as root mean squared error in each Sri Lankan district. RMSE represents the average size of the error in the same units as the data, thus the map below shows the average incidence difference between model and data.
+
+```{r fig.height=6, fig.width=4, echo = F, message = F, warning = F, fig.align="center"}
+sla.districts <- readOGR("../Data/Sri Lanka boundaries/LKA_adm1.shp")
+sla.dist.sld99 <- spTransform(sla.districts, CRSobj = CRS("+init=epsg:5235"))
+library(doParallel)
+registerDoParallel(cores = 4)
+mse.regions <- foreach(i = 1:nrow(sla.dist.sld99), .combine = c) %dopar% {
+  name <- sla.dist.sld99$NAME_1
+  pol <- subset(sla.dist.sld99, NAME_1 == name[i])
+  extr <- extract(bite.incid, pol)
+  err <- sqrt(mean(na.omit((extr[[1]][, 1] - extr[[1]][, 2])^2)))
+  return(err)
+}
+sla.dist.sld99$rmse <- mse.regions
+sla.fort <- fortify(sla.dist.sld99)
+sla.fort$id <- as.numeric(sla.fort$id)
+sla.fort$id <- as.character(sla.fort$id + 1)
+sla.dist.sld99@data$id <- sla.dist.sld99@data$ID_1
+
+sla.fort <- merge(sla.fort, sla.dist.sld99@data, by = "id")
+
+library(ggplot2)
+ggplot(sla.fort, aes(x = long, y = lat, group = group, fill = rmse)) + geom_polygon(colour = "white") +
+  coord_equal()
+```
+```{r, echo = F}
+saveRDS(sla.fort, "../Model-results/SLA-disctricts-CAR-RMSE.rds")
+```
+
+## Responses fitted by the model
+
+The model fitted is capable of reproducing non-linear relationships. Given that the best-performing model kept land cover as an important variable, these are the responses to both human population density and snake potential abundance in each of the land cover classes, across all values of human population density and snake potential abundance that occur in each class.
+
+```{r, results="hide", include=F, echo=F}
+indices.mean <-  apply(indices, 2,  median)
+aggr.ind <-  indices.mean
+
+s.weighted.1 <- apply(S, 1, function(x){x * (indices.mean)})
+S.sum <- colSums(s.weighted.1)
+hum.pop <-  incid.data$hum.pop
+
+s.unweighted <- apply(S, 1, function(x){x/(expert.indices$Agressiveness/10)})
+S.sum.unw <- colSums(s.unweighted)
+```
+
+```{r, results="hide", include=F, echo=F}
+incid.fun.1 <- function(H.log, H.tot, S.s, beta0, beta1){
+      Beta <- exp(+ beta0 + beta1 * H.log^2)
+      P <- 1 - exp( - Beta * S.s)
+      H.bit <- P * H.tot
+      return(H.bit)
+}
+```
+
+```{r, messag = F, results="hide", echo=F, include=F}
+
+hum.pop.mins <- foreach(i = 1:5, .combine = c) %do% {min(hum.pop[incid.data$land.cover == i])[1]}
+hum.pop.max <- foreach(i = 1:5, .combine = c) %do% {max(hum.pop[incid.data$land.cover == i])[1]}
+
+s.mins <- foreach(i = 1:5, .combine = c) %do% {min(S.sum[incid.data$land.cover == i])[1]}
+s.max <- foreach(i = 1:5, .combine = c) %do% {max(S.sum[incid.data$land.cover == i])[1]}
+
+s.mins.1 <- foreach(i = 1:5, .combine = c) %do% {min(S.sum.unw[incid.data$land.cover == i])[1]}
+s.max.1 <- foreach(i = 1:5, .combine = c) %do% {max(S.sum.unw[incid.data$land.cover == i])[1]}
+
+bites.resp.data <- foreach(i = 1:5) %do% {
+      df <- expand.grid(H = seq(hum.pop.mins[i], hum.pop.max[i], len = 50),
+                  S = seq(s.mins[i], s.max[i], len = 50))
+      S.1 <- seq(s.mins.1[i], s.max.1[i], len = 50)
+      df$S.1 <- S.1
+      return(df)
+      }
+
+bites.resp.data <- lapply(bites.resp.data, function(x){
+      x$H.log <- log(x$H)
+      return(x)
+})
+
+
+bites.resp <- foreach(i = 1:5) %do% {
+      apply(bites.resp.data[[i]], 1, function(x){
+            incid.fun.1(H.tot = x[which(names(bites.resp.data[[i]]) == "H")], 
+                      H.log = x[which(names(bites.resp.data[[i]]) == "H.log")],
+                      S.s = x[which(names(bites.resp.data[[i]]) == "S")], 
+                      beta0 = x.full[,paste0("beta0[", i, "]")],
+                      beta1 = x.full[,paste0("beta1[", i, "]")]
+            )})}
+
+
+
+bites.resp.ints <- foreach(j = 1:5) %do%{
+      foreach(i = 1:ncol(bites.resp[[j]]), .combine = rbind) %do% {
+            c(HPDinterval(as.mcmc(bites.resp[[j]][,i]), prob = 0.95), median(bites.resp[[j]][,i]))
+      } 
+}
+
+bites.resp.ints <- foreach(i = 1:5) %do% {
+      x1 <- data.frame(bites.resp.ints[[i]])
+      names(x1) <- c("Mean")
+      x1 <- cbind(x1, bites.resp.data[[i]])
+      return(x1)
+}
+
+cover.classes <- c("Forest", "Degraded\ forest", "Agriculture", "Urban", "Tea")
+
+for(i in 1:5) {bites.resp.ints[[i]]$land.cover <- cover.classes[i]}
+```
+
+Previous analyses suggested that there is a negative effect of human population on incidence. However the number of snakebite cases increases with human population. The relationship with snakes however is non-linear. The model suggests that in certain cases there could be either less cases than expected by the potential number of snakes, or that there are less snakes than indicated by models:
+
+```{r fig.height=8, fig.width=12, echo = F, warning=F, fig.cap="Partial responses of snakebites to humans and snakes."}
+library(plot3D)
+
+x <- lapply(bites.resp.ints, function(x){ unique(x$H)})
+y <- lapply(bites.resp.ints, function(x){ unique(x$S.1)})
+z.bit <- lapply(bites.resp.ints, function(x){ matrix(x$Mean, 50, 50)})
+z.inc <- lapply(bites.resp.ints, function(x){ matrix(x$Mean / x$H, 50, 50)})
+
+par(mfrow = c(2, 3))
+for(i in 1:5){
+      image2D(x = x[[i]], y = y[[i]], z = z.bit[[i]], ticktype = "detailed",
+              col = (another.1(100)),
+              xlab = "Human density", ylab = "Snakes",
+              zlab = "Total cases", main = cover.classes[i]
+      )
+}
+```
+
+
+When the number of cases is transformed to incidence, the model is in agreement with analyses that suggest that there is a negative effect of humans on snakebite incidence. Given the parameter combinations in each of the land cover classes, there are cases where snakes might correlate negatively with snakebite incidence (notice the negative slopes in response to snake abundance in some of the land cover classes):
+
+```{r Snakebites response, fig.height=8, fig.width=12, echo = F, fig.cap="Partial response of snakebite incidence to snakes and humans per land cover class"}
+par(mfrow = c(2, 3))
+for(i in 1:5){
+      image2D(x = x[[i]], y = y[[i]], z = z.inc[[i]], ticktype = "detailed",
+              col = (another.1(100)),
+              xlab = "Human density", ylab = "Snakes",
+              main = cover.classes[i]
+      )
+}
+```
+
+The existence of the negative effect of snakes on incidence will be confirmed in the later sections of these analyses.
+
+## Contact rate and change of snake density across Sri Lanka
+
+The contact rate $\beta$ is a function of human density and two other parameters $\beta_0$ and $\beta_1$:
+
+$$ \beta(\ln(H_{total}), l) =  \exp(\beta_{0, l} + \beta_{1, l} \ln(H_{total})^2) $$ 
+
+Where $l$ are the five land cover classes. I used the function above with the parameter estimates to represent the contact rate in space. The far left and right panels represent the 2.5 and 97.5% credible intervals, whereas the central one is the median of posterior estimates.
+
+```{r, echo=F}
+contact.rate <- function(H.log, beta0, beta1){return(exp(beta0 + beta1 * H.log^2))}
+
+rates <- foreach(i = 1:nrow(incid.data), .combine = rbind) %do% {
+      contact.rate(
+            H.log = incid.data$log.hum[i],
+            beta0 = x.full[, paste0("beta0[", incid.data$land.cover[i], "]")],
+            beta1 = x.full[, paste0("beta1[", incid.data$land.cover[i], "]")]
+      )
+}
+
+rates.ints <- foreach(i = 1:nrow(rates), .combine = rbind) %dopar% {
+      c(HPDinterval(as.mcmc(rates[i,]), prob = 0.95), median(rates[i,]))
+}
+rates.ints <- data.frame(rates.ints)
+names(rates.ints) <- c("low2.5", "high97.5", "Median")
+
+rates.r <- rasterFromXYZ(data.frame(incid.data[, c("x", "y")], rates.ints))
+```
+
+```{r fig.height=6, fig.width=10, echo = F, fig.cap="Spatial variability of the effect of humans on snake abundance (credible intervals and median) "}
+names(rates.r) <- c("low2.5", "high97.5", "Median")
+levelplot(rates.r, col.regions = (cool(100)))
+```
+
+```{r, echo = F}
+hum.pop.mins <- foreach(i = 1:5, .combine = c) %do% {min(incid.data$hum.pop[incid.data$land.cover == i])[1]}
+hum.pop.max <- foreach(i = 1:5, .combine = c) %do% {max(incid.data$hum.pop[incid.data$land.cover == i])[1]}
+
+h.log.min = abs(min(hum.pop.mins))
+
+rates.resp.data <- foreach(i = 1:5) %dopar% {data.frame(H = seq(hum.pop.mins[i], hum.pop.max[i], len = 1000), land.cover = i)}
+rates.resp.data <- lapply(rates.resp.data, function(x){
+      x$H.log <- log(x$H) + h.log.min
+      return(x)
+})
+
+rates.resp <- foreach(i = 1:5) %dopar% {
+      x <- foreach(j = 1:1000, .combine = rbind) %do% {
+             contact.rate(H.log = rates.resp.data[[i]]$H.log[j], 
+                   beta0 = x.full[, paste0("beta0[", i, "]")] + log(100),
+                   beta1 = x.full[, paste0("beta1[", i, "]")])     
+      }
+      return(x)
+}
+
+cover.classes <- c("Forest", "Degraded\ forest", "Agriculture", "Urban", "Tea")
+
+rates.resp.ints <- foreach(i = 1:5, .combine = rbind) %do% {
+      x <- foreach(j = 1:1000, .combine = rbind) %do% {
+            c(HPDinterval(as.mcmc(rates.resp[[i]][j,]), prob = 0.95), median(rates.resp[[i]][j,]))
+      }
+      x <- data.frame(x)
+      names(x) <- c("low2.5", "high97.5", "Median")
+      x$land.cover <- cover.classes[i]
+      x$H.log = rates.resp.data[[i]]$H.log
+      x$H = rates.resp.data[[i]]$H
+      return(x)
+}
+```
+
+To visualy assess the individual responses among land cover classes here are  different values that the contact rate can take given the range of human population densities observed across Sri Lanka in each of the land cover classes, in two different scales. First with human population density in log-scale:
+
+```{r fig.height=4, fig.width=6, echo=F, warning=F, message=F, fig.cap="Effect of humans on snake abundance."}
+library(ggplot2)
+
+ggplot(rates.resp.ints) + geom_line(aes(x = H.log, y = Median, colour = land.cover)) +
+      geom_ribbon(aes(x = H.log, ymin = low2.5, ymax = high97.5, fill = land.cover), alpha = 0.3) +
+      labs(x = "log(Human density)", y = "Snake reduction", title = "Reduction of snake populations by land cover class",
+           colour = "Land cover classes", fill = "Land cover classes")
+```
+
+These responses and credible intervals are the result of the $\beta_0$ parameter:
+
+```{r, echo=F,  include=F, warning=F}
+library(reshape2)
+beta0 <- data.frame(x.full[, paste0("beta0[", 1:5, "]")])
+names(beta0) <- cover.classes
+beta1 <- data.frame(x.full[, paste0("beta1[", 1:5, "]")])
+names(beta1) <- cover.classes
+```
+
+```{r Beta 0,  fig.height=4, fig.width=4, echo=F, warning=F, message = F, fig.cap="Distribution of posterior samples for beta 0 parameters of the function to adjust snake abundance in relation to humans."}
+beta0.melt <- melt(beta0)
+names(beta0.melt) <- c("Class", "Beta")
+ggplot(beta0.melt) + geom_boxplot(aes(y = Beta, x = Class, fill = Class, colour = Class), alpha = 0.3) + 
+      labs(y = expression(beta[0])) + guides(fill = F, colour = F) +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+```
+
+And $\beta_1$ estimates:
+
+```{r Beta 1, fig.height=4, fig.width=4, echo = F,  warning = F, message = F, fig.cap="Distribution of posterior samples for beta 1 parameters of the function to adjust snake abundance in relation to humans."}
+beta1.melt <- melt(beta1)
+names(beta1.melt) <- c("Class", "Beta")
+
+ggplot(beta1.melt) + geom_boxplot(aes(y = Beta, x = Class, fill = Class, colour = Class), alpha = 0.3) +
+      labs(y = expression(beta[1]), fill = NULL, colour = NULL) + guides(fill = F, colour = F) +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+It appears that there are two (possibly three) different effects of land cover on the contact rate. On one side, Forest and Degraded forest are largely similar, and greatly differ from Urban and Tea cover. Agricultural land is relatively similar to Forest and Degraded forest but results in the highest contact rates within the range of human population densities in which it occurs.
+

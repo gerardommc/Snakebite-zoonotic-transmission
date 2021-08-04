@@ -1,0 +1,24 @@
+"0","library(foreach)"
+"0","fixed.effects <- lapply(bites.incidence, function(x1){x1[, 1:22]})"
+"0",""
+"0","gel.diag <- gelman.diag(as.mcmc.list(fixed.effects))"
+"0",""
+"0","sum.inc.pars <- foreach(i = 1:22, .combine = rbind) %do% {"
+"0","    med <- median(c(fixed.effects[[1]][, i], fixed.effects[[2]][, i], fixed.effects[[3]][, i]))"
+"0","    std.dev <- sd(c(fixed.effects[[1]][, i], fixed.effects[[2]][, i], fixed.effects[[3]][, i]))"
+"0","    cr.int <- HPDinterval(as.mcmc(fixed.effects[[1]][, i], x1[[2]][, i], fixed.effects[[3]][, i]), 0.95)"
+"0","    return(c(med, std.dev, cr.int))"
+"0","}"
+"0",""
+"0","sum.inc.pars <- data.frame(sum.inc.pars)"
+"0","names(sum.inc.pars) <- c(""Median"", ""Std.Dev"", ""Cr.025"", ""Cr.975"")"
+"0","sum.inc.pars$Gelman.conv <- gel.diag$psrf[, 2]"
+"0",""
+"0","rownames(sum.inc.pars) <- colnames(fixed.effects[[1]])"
+"0","knitr::kable(sum.inc.pars)"
+"2","Registered S3 methods overwritten by 'htmltools':
+  method               from         
+  print.html           tools:rstudio
+  print.shiny.tag      tools:rstudio
+  print.shiny.tag.list tools:rstudio
+"

@@ -1,0 +1,8 @@
+"0","par(mfrow = c(2, 3))"
+"0","for(i in 1:5){"
+"0","      image2D(x = x[[i]], y = y[[i]], z = z.inc[[i]], ticktype = ""detailed"","
+"0","              col = (another.1(100)),"
+"0","              xlab = ""Human density"", ylab = ""Snakes"","
+"0","              main = cover.classes[i]"
+"0","      )"
+"0","}"

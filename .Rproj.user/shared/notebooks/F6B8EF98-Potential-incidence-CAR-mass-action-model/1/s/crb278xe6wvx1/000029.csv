@@ -1,0 +1,5 @@
+"0",""
+"0","lo.inc.bit <- loess(cor.tests.df$Data.incidence ~ cor.tests.df$Model.incidence, span = 0.1)"
+"0","lo.inc.pred <- predict(lo.inc.bit, newdata = seq(0, 0.016, len = 100))"
+"0","lines(seq(0, 0.015, len = 100), lo.inc.pred,  lty = 2, lwd = 3, col = ""darkturquoise"")"
+"0",""

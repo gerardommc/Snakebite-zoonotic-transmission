@@ -1,0 +1,5 @@
+"0","library(reshape2)"
+"0","beta0 <- data.frame(x.full[, paste0(""beta0["", 1:5, ""]"")])"
+"0","names(beta0) <- cover.classes"
+"0","beta1 <- data.frame(x.full[, paste0(""beta1["", 1:5, ""]"")])"
+"0","names(beta1) <- cover.classes"

@@ -1,0 +1,2 @@
+"0","names(rates.r) <- c(""low2.5"", ""high97.5"", ""Median"")"
+"0","levelplot(rates.r, col.regions = (cool(100)))"

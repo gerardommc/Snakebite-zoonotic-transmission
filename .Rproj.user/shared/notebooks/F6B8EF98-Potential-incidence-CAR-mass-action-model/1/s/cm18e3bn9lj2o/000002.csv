@@ -1,0 +1,51 @@
+"0","library(raster); library(rgdal); library(R2jags); library(SpatialPack); library(readODS)"
+"2","Loading required package: sp
+"
+"2","rgdal: version: 1.5-23, (SVN revision 1121)
+Geospatial Data Abstraction Library extensions to R successfully loaded
+Loaded GDAL runtime: GDAL 3.2.2, released 2021/03/05
+Path to GDAL shared files: /usr/share/gdal
+GDAL binary built with GEOS: TRUE 
+Loaded PROJ runtime: Rel. 7.2.1, January 1st, 2021, [PJ_VERSION: 721]
+Path to PROJ shared files: /home/gerardo/.local/share/proj:/usr/share/proj
+PROJ CDN enabled: FALSE
+Linking to sp version:1.4-5
+To mute warnings of possible GDAL/OSR exportToProj4() degradation,
+use options(""rgdal_show_exportToProj4_warnings""=""none"") before loading rgdal.
+"
+"2","Loading required package: rjags
+"
+"2","Loading required package: coda
+"
+"2","Linked to JAGS 4.3.0
+"
+"2","Loaded modules: basemod,bugs
+"
+"2","
+Attaching package: ‘R2jags’
+
+"
+"2","The following object is masked from ‘package:coda’:
+
+    traceplot
+
+"
+"2","Loading required package: fastmatrix
+"
+"0","bites.incidence <- readRDS(""../Model-results/Snakebites-mass-action-NIMBLE-model.rds"")"
+"0",""
+"0","incid.data <- read.csv(""../Data/Incid-data.csv"")[, -1]"
+"0",""
+"0","expert.indices <- read.csv(""../Data/Agressivenes-indices.csv"")"
+"0",""
+"0","snake.pars <- read.csv(""../Data/Parameters-questions.csv"")"
+"0","rel.abund <- with(snake.pars, Density_5k)"
+"0",""
+"0","S <- as.matrix(incid.data[, 3:9])"
+"0","max.s <- apply(S, 2, max)"
+"0","S <- sweep(S, 2, max.s, ""/"")"
+"0","S <- sweep(S, 2, expert.indices$Agressiveness/10 * rel.abund, ""*"")"
+"0",""
+"0","Hum.log <- log(incid.data$hum.pop)"
+"0",""
+"0","incid.data$log.hum <- Hum.log"

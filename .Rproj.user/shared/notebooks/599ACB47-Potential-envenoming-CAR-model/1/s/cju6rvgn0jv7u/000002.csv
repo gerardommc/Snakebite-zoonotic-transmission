@@ -1,0 +1,10 @@
+"0","envenom.incidence <- readRDS(""../Model-results/Envenoming-NIMBLE-model.rds"")"
+"0",""
+"0","fixed.effects <- lapply(envenom.incidence, function(x1){x1[, c(paste0(""inter["", 1:5, ""]""),"
+"0","                                                    paste0(""s.effects["", 1:7, ""]""),"
+"0","                                                    ""r"")]})"
+"0",""
+"0","gel.diag <- gelman.diag(as.mcmc.list(fixed.effects))"
+"2","Error in gelman.diag(as.mcmc.list(fixed.effects)) : 
+  no se pudo encontrar la función ""gelman.diag""
+"

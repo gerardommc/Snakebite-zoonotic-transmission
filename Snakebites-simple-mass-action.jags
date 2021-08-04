@@ -1,0 +1,20 @@
+model{
+      #Likelihood
+      for(i in 1:n){
+            Beta[i] <- exp(beta0[class[i]] + beta1[class[i]] * Hum.log[i]^2)
+            S.sum[i] <- inprod(indices[], S[i,])
+            P[i] <- 1 - exp(-Beta[i] * S.sum[i])
+            H.bit[i] <- P[i] * Hum.tot[i]
+            P.r[i] <- r[class[i]]/(r[class[i]] + H.bit[i])
+            Hum.bit[i] ~ dnegbin(P.r[i], r[class[i]])
+      }
+      #Priors
+      for(j in 1:n.classes){
+            beta0[j] ~ dnorm(0, 1.0E-3)
+            beta1[j] ~ dnorm(0, 1.0E-3)
+            r[j] ~ dunif(0, 100)
+      }
+      for(k in 1:n.species){
+            indices[k] ~ dunif(0,10)
+      }
+}

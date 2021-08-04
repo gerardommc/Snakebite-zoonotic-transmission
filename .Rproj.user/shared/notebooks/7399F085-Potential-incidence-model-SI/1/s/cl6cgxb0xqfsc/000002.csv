@@ -1,0 +1,7 @@
+"0","incid.data$hum.bites <- with(incid.data, hum.pop * bites)"
+"0","orig.bites <- rasterFromXYZ(incid.data[,c(""x"", ""y"", ""hum.bites"")])"
+"0","hum.pop.r <- rasterFromXYZ(incid.data[,c(""x"", ""y"", ""hum.pop"")])"
+"0","incid.orig.r <- rasterFromXYZ(incid.data[,c(""x"", ""y"", ""bites"")])"
+"0",""
+"0","model.bites.r <- rasterFromXYZ(cbind(incid.data[, c(""x"", ""y"")], preds.bit.ints.2))"
+"0","incid.model.r <- model.bites.r / hum.pop.r"

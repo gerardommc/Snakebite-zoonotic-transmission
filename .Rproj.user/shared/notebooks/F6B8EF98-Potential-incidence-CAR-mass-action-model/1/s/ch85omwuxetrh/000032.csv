@@ -1,0 +1,3 @@
+"0",""
+"0","plot(cor.tests.df$Model.bites, resids/na.omit(cor.tests.df$Model.bites), main = ""Scale of model deviations from data"", xlab = ""Predicted number of bites"", ylab = ""Residuals / Number of bites"","
+"0","     pch = 20, col = ""grey90"", cex = 0.75)"

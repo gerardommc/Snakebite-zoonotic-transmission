@@ -1,0 +1,384 @@
+---
+title: "Envenoming incidence CAR model"
+author: "Gerardo Martin"
+date: "1st August 2019"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Intro and Methods
+
+This is the analysis of the envenoming model. I modelled envenoming incidence as a subset of snakebites. To do this I estimated the probability that a snakebite results in envenoming as a function of the snakes present weighted by envenoming severity. The I modelled the number of snakebites that result in envenoming as a negative binomial distribution, simulating the dispersion parameter $r$ with MCMC. The model includes the effect of land cover as an intercept as I did not find any evidence of direct interaction between snakes and land cover.
+
+```{r loading packages, message=FALSE, results="hide", include = F,  echo = F}
+#load("Data objects/Potential incidence-Negbin.RData")
+library(raster); library(rgdal); library(R2jags); library(MASS); library(SpatialPack); library(readODS)
+```
+
+```{r Reading data, message=F, include = F,  echo = F}
+incid.data <- read.csv("../Data/Incid-data.csv")[, -1]
+
+expert.indices <- read.csv("../Data/Agressivenes-indices.csv")
+
+snake.pars <- read.csv("../Data/Parameters-questions.csv")
+rel.abund <- with(snake.pars, Density_5k)
+
+#Snakebite model data
+bites.hum.pars <- read.csv("../Model-results/Mass-action-estimates.csv")
+
+beta0 <- subset(bites.hum.pars, X == paste0("beta0[", 1:5, "]"), select = "Median")
+beta1 <- subset(bites.hum.pars, X == paste0("beta1[", 1:5, "]"), select = "Median")
+
+model.bites <- raster("../Model-results/Spatial/Snakebites/Incidence.asc")
+
+log.hum <- log(incid.data$hum.pop)
+Hum.bit <- extract(model.bites, incid.data[, c("x", "y")])
+Hum.env <- incid.data$envenomings * incid.data$hum.pop
+Hum.env <- ifelse(Hum.env > Hum.bit, Hum.bit, Hum.env)
+Hum.env <- floor(Hum.env)
+ 
+Beta.i <- exp(beta0[incid.data$land.cover,] + beta1[incid.data$land.cover,] * log.hum^2)
+
+S <- as.matrix(incid.data[, 3:9])
+max.s <- apply(S, 2, max)
+S <- sweep(S, 2, max.s, "/")
+S <- sweep(S, 2, expert.indices$Severity/10 * rel.abund, "*")
+S <- sweep(S, 1, Beta.i, "*")
+```
+
+The number of envenoming cases after a snakebite were used as the response variables. The first part of the model is:
+
+$$ \ln \left(\frac{P}{1-P} \right) = \mathrm{int}_l + \sum_i^n I_i \times S_i $$
+
+The number of envenoming cases was then the product of:
+
+$$ H_{envenomed} = P \times H_{bitten}  $$
+
+# Results
+
+## Diagnosis
+
+First I begin to explore what are the parameter estimates in all three run chains. At the same time it is possible to see whether the chains have converged if the numbers in the `Rhat` column do not exceed 1.1. At the end of the summary the DIC appears. The model which I'm describing here had the lowest DIC. It might be possible to further reduce it but would begin to be biologically dubious.
+
+```{r, message  = F, warning=F,  echo = F}
+envenom.incidence <- readRDS("../Model-results/Envenoming-NIMBLE-model.rds")
+
+fixed.effects <- lapply(envenom.incidence, function(x1){x1[, c(paste0("inter[", 1:5, "]"),
+                                                    paste0("s.effects[", 1:7, "]"),
+                                                    "r")]})
+
+gel.diag <- gelman.diag(as.mcmc.list(fixed.effects))
+
+library(foreach)
+
+sum.inc.pars <- foreach(i = 1:13, .combine = rbind) %do% {
+    med <- median(c(fixed.effects[[1]][, i], fixed.effects[[2]][, i], fixed.effects[[3]][, i]))
+    std.dev <- sd(c(fixed.effects[[1]][, i], fixed.effects[[2]][, i], fixed.effects[[3]][, i]))
+    cr.int <- HPDinterval(as.mcmc(fixed.effects[[1]][, i], fixed.effects[[2]][, i], fixed.effects[[3]][, i]), 0.95)
+    return(c(med, std.dev, cr.int))
+}
+
+sum.inc.pars <- data.frame(sum.inc.pars)
+names(sum.inc.pars) <- c("Median", "Std.Dev", "Cr.025", "Cr.975")
+sum.inc.pars$Gelman.conv <- gel.diag$psrf[, 2]
+
+rownames(sum.inc.pars) <- colnames(fixed.effects[[1]])
+knitr::kable(sum.inc.pars)
+```
+
+```{r}
+random.effects <- lapply(envenom.incidence, function(x1){x1[, paste0("rho[", 1:3057, "]")]})
+
+rho <- rbind(random.effects[[1]], random.effects[[2]], random.effects[[3]])
+rho <- apply(rho, 2, median)
+
+rho.r <- rasterFromXYZ(data.frame(incid.data[, c("x", "y")], rho))
+
+rho.diag <- geweke.diag(random.effects)
+rho.diag.r <- rasterFromXYZ(data.frame(incid.data[, c("x", "y")], rho.diag$z))
+
+rho.stack <- stack(rho.r, rho.diag.r)
+names(rho.stack) <- c("rho", "Geweke convergence")
+
+plot(rho.stack)
+```
+
+
+The tests show in agreement with the `Rhat` column of the model summary, that all chains mixed well and converged.
+
+## Model predictions
+
+Given the structure of the model passed to JAGS, the `R` function to predict and be able to see the patterns of envenoming with the estimated parameters is:
+
+```{r Envenoming function, echo = F}
+envenom.fun <- function(S, class, s.effects, H.bit, int){
+    df <- data.frame(class = as.factor(incid.data$land.cover), S)
+    pars <- as.matrix(cbind(int, s.effects))
+    X.mat <- model.matrix(formula(paste0("~ 0 + class +", paste0(colnames(S), collapse = "+"))), data = df)
+    P <- binomial()$linkinv(pars %*% t(X.mat))
+    H.bit = Hum.bit
+    H.env <- apply(P, 1, function(x){ x * H.bit})
+    return(H.env)
+}
+```
+
+```{r Predicting, message=F, warning=F, include=F, results="hide", echo = F}
+x.full <- rbind(fixed.effects[[1]], fixed.effects[[2]], fixed.effects[[3]])
+
+x.ints <- x.full[, paste0("inter[", 1:5, "]")]
+x.seffs <- x.full[, paste0("s.effects[", 1:7, "]")]
+x.rho <- rbind(random.effects[[1]], random.effects[[2]], random.effects[[3]])
+
+Beta.i <- exp(beta0[incid.data$land.cover, ] + beta1[incid.data$land.cover, ] * log(incid.data$hum.pop)^2)
+
+S <- as.matrix(incid.data[, 3:9])
+max.s <- apply(S, 2, max)
+S <- sweep(S, 2, max.s, "/")
+S <- sweep(S, 2, expert.indices$Severity/10 * rel.abund, "*")
+S <- sweep(S, 1, Beta.i, "*")
+
+s.preds <- apply(x.seffs, 1, function(x){
+    rowSums(sweep(S, MARGIN = 2, x, FUN = "*"))
+})
+
+s.effs <- s.preds + t(x.ints[, incid.data$land.cover])
+
+inc.preds <- exp(s.effs)/(1+exp(s.effs)) * exp(t(x.rho))
+
+inc.sum <- data.frame(t(apply(inc.preds, 1, function(x1){HPDinterval(as.mcmc(x1), 0.5)})))
+names(inc.sum) <- c("incid", "incid.1")
+
+prob.env <- rasterFromXYZ(data.frame(incid.data[, c("x", "y")], inc.sum$incid))
+env.inc.model <- prob.env*model.bites
+```
+
+
+```{r Format predictions, message = F, results = "hide", echo=F, warning=F, include = F}
+incid.data$hum.env <- with(incid.data, hum.pop * envenomings)
+envs.data <- rasterFromXYZ(incid.data[,c("x", "y", "hum.env")])
+hum.pop.r <- rasterFromXYZ(incid.data[,c("x", "y", "hum.pop")])
+
+env.inc.data <- rasterFromXYZ(incid.data[,c("x", "y", "envenomings")])
+
+envs.model <- env.inc.model * hum.pop.r
+```
+
+Then by extracting the median of the posteriors and transforming them o raster format we can plot the number of envenoming cases predicted by the model and compare it with the number of envenoming cases used as data:
+
+```{r Number of envenomings, fig.height=6, fig.width=9, warning=F, message=F, echo = F}
+
+library(rasterVis); library(RColorBrewer)
+
+jet.2 <- colorRampPalette(c("navy","forestgreen", "darkgoldenrod1", "darkorange3"))
+another.1 <- colorRampPalette(c("midnightblue",
+                              "turquoise3",
+                              "violetred3",
+                              "goldenrod1",
+                              "grey95"))
+another <- colorRampPalette(c("midnightblue",
+                              "turquoise3",
+                              "violetred3",
+                              "yellow1"))
+cool <- colorRampPalette(c("orangered1", "goldenrod1", "darkturquoise"))
+
+envs.r <- stack(envs.model, envs.data)
+names(envs.r) <- c("Model", "Data")
+
+env.incid.r <-  stack(env.inc.model, env.inc.data)
+names(env.incid.r) <- c("Model", "Data")
+
+levelplot(envs.r, col.regions = rev(another.1(100)), at = seq(0, 250, len = 100), main = "Number of envenomings")
+```
+
+Then if the number of cases is divided by the total population density we get envenoming incidence:
+
+```{r Envenoming incidence, fig.height=6, fig.width=9, message=F, echo = F, warning = F}
+levelplot(env.incid.r, col.regions = rev(another.1(100)), at = seq(0, 0.007, len = 100), main = "Envenoming incidence")
+#plot(env.incid.r)
+```
+
+I believe the obvious visual differences between these two maps are mainly caused by the approach I took in the first place of modelling envenoming cases as a subset of snakebite cases, whereas the original analyses did not use this approach. In fact in few of the grid cells envenoming incidence was higher than snakebite incidence, which is in fact impossible. To correct this I replaced those envenoming incidence values with the snakebite incidence value (100% of the snakebite cases resulted in envenoming).
+
+As a mode of validation I analyse the correlation between the patterns produced by the model and those of the data. The plots below show the correlation coefficient between incidence produced by the model and the data, and the number of bites. The red line represents the "gold standard", which would be a regression line with intercept equal to zero and slope equal to one. The dashed blue line is a smoothing loess regression that shows the actual trend between model and data:
+
+```{r Plotting the correlaitons, fig.height=5, fig.width=10, message=F, echo = F}
+library(scales); library(SpatialPack)
+
+cor.tests.df <- data.frame(rasterToPoints(stack(envs.r, env.incid.r)))
+
+names(cor.tests.df) <- c("x", "y", "Model.bites", "Data.bites", 
+                         "Model.incidence", "Data.incidence")
+
+cor.incid <- modified.ttest(cor.tests.df$Model.incidence,
+                            cor.tests.df$Data.incidence,
+                            cor.tests.df[, c("x", "y")])
+cor.bite <- modified.ttest(cor.tests.df$Model.bites, 
+                           cor.tests.df$Data.bites,
+                           cor.tests.df[, c("x", "y")])
+
+par(mfrow = c(1,2))
+plot(cor.tests.df$Data.bites, cor.tests.df$Model.bites,  main = "Number of envenomings",
+     xlab = "Data",  ylab = "Model", pch = 20, col = alpha("grey70", 0.5), cex = 1.5)
+abline(a = 0, b = 1, col = "orangered1", lwd = 2.5)
+text(x = 40, y = 150, paste0("r = ", round(cor.bite$corr, 2), ", P = ", round(cor.bite$p.value, 2)))
+
+plot(cor.tests.df$Data.incidence,cor.tests.df$Model.incidence, main = "Envenoming incidence",
+     xlab = "Data",  ylab = "Model", pch = 20, col = alpha("grey70", 0.5),  cex = 1.5)
+abline(a = 0, b = 1, col = "orangered1", lwd = 2.5)
+text(x = 0.0015, y = 0.0045, paste0("r = ", round(cor.incid$corr, 2), ", P = ", round(cor.incid$p.value, 2)))
+```
+
+The correlation in both cases is relatively high and the trend does not look to depart too much from the straight (reference) line. 
+
+```{r fig.height=4, fig.width=8, echo = F}
+par(mfrow = c(1, 2))
+qqplot(x = cor.tests.df$Data.bites, y = cor.tests.df$Model.bites, main = "QQ plot-bites",
+       xlab = "Data", ylab = "Model")
+abline(a = 0, b = 1, col = "red")
+
+qqplot(x = cor.tests.df$Data.incidence, y = cor.tests.df$Model.incidence, main = "QQ plot-incidence",
+       xlab = "Data", ylab = "Model",
+       xlim = c(0, 0.0065), ylim = c(0, 0.0065))
+abline(a = 0, b = 1, col = "red")
+```
+
+These two plots suggest that the statistical distribution of the number of envenoming cases and  rates are both very similar to data. Envenoming incidence, although tens to predict higher incidence more frequently than there are in the data.
+
+## Relationship between species fitted effects and indices of severity and relative abundance.
+
+Comparing the fitted effects and the relative abundance and bite severity indices used previously to explain envenoming.
+
+```{r, echo = F, warning = F, results = "hide"}
+library(reshape2); library(ggplot2); library(readODS)
+x.ints
+indices.df <- data.frame(x.seffs)
+
+names(indices.df) <- c("Bungarus caeruleus", "Bungarus ceylonicus",
+                       "Daboia russelii", "Echis carinatus",
+                       "Hypnale spp.", "Naja naja",
+                       "Trimeresurus trigonocephalus")
+aggres <- read.csv("../Data/Agressivenes-indices.csv")
+snake.pars <- read.csv("../Data/Parameters-questions.csv")
+
+
+rel.abund <- snake.pars$Density_5k
+sev <- aggres$Severity/10
+
+abund.sev <- rel.abund* sev
+abund.sev.df <- data.frame(Spp = names(indices.df),
+                           abund.sev = abund.sev)
+
+ind.melt <- melt(indices.df, 
+                 value.name = "Indices", 
+                 measure.vars = names(indices.df)
+                 )
+
+ind.melt$Abund.sev <- sapply(1:nrow(ind.melt), 
+                             function(x){
+                                   abund.sev.df$abund.sev[abund.sev.df$Spp == ind.melt$variable[x]]
+                             })
+
+ind.melt$severity <- sapply(1:nrow(ind.melt), 
+                             function(x){
+                                   sev[abund.sev.df$Spp == ind.melt$variable[x]]
+                             })
+
+ind.melt$rel.abund <- sapply(1:nrow(ind.melt), 
+                             function(x){
+                                   rel.abund[abund.sev.df$Spp == ind.melt$variable[x]]
+                             })
+```
+
+
+```{r fig.height=4, fig.width=6, echo = F}
+ggplot(ind.melt) + geom_boxplot(aes(x = log10(Abund.sev), y = Indices * severity, fill = variable, colour = variable), alpha = 0.6) +
+  labs(x = "log10 Relative abundance x severity",
+       y = "Fitted effect")
+```
+
+```{r fig.height=4, fig.width=6, echo = F}
+ggplot(ind.melt) + geom_boxplot(aes(x = severity, y = Indices * severity, fill = variable, colour = variable), alpha = 0.6) +
+  labs(x = "severity",
+       y = "Fitted effect")
+```
+
+```{r fig.height=4, fig.width=6, echo = F}
+ggplot(ind.melt) + geom_boxplot(aes(x = log10(rel.abund), y = Indices * severity, fill = variable, colour = variable), alpha = 0.6) +
+  labs(x = "log10 Relative abundance",
+       y = "Fitted effect")
+```
+
+
+## Residuals
+
+Finally here I assess how well the model complies with the assumed relationship between envenoming cases and the effect of the different snake species and human population density. To start with, the far left hand side plot shows the density of residuals. These appear to be centred at zero, and with tails at both sides, although the tail on the right hand side of the zero appears longer, which indicates that the model tends to predict more envenomings than there actually are. The centre plot shows that residuals tend to be larger at larger values of the response variable, and the largest departures from data occur at intermediate values of the data (between 5 and 150 envenoming cases). The departure of the model is as high as 10 standard deviations from the mean. This value, according to the far right hand side plot is as much as three times the target value of the data. The observed trend (blue dashed line) between $x$ and $y$ values in the second and third plots do not seem to depart too much from the reference horizontal red line.
+
+```{r Residuals, fig.height=4, fig.width=12, warning=F, echo=F}
+
+resids <- with(cor.tests.df, Data.bites - Model.bites)
+par(mfrow = c(1, 3))
+plot(density(na.omit(resids)/sd(resids)), main = "Density of standardised residuals")
+
+plot(cor.tests.df$Data.bites, resids/sd(resids), main = "Residuals vs bites", xlab = "Predicted number of envenomings", ylab = "Standardised residuals", pch = 20, col = "lightgrey",  cex = 0.5)
+abline(h = 0, col = "orangered1", lwd = 1.5)
+
+plot(cor.tests.df$Model.bites, resids/cor.tests.df$Data.bites, main = "Scale of model deviations from data", xlab = "Predicted number of envenomings", ylab = "Residuals / Number of envenomings",
+     pch = 20, col = "lightgrey", cex = 0.5)
+abline(h = 0, col = "orangered1", lwd = 1.5)
+```
+
+### Residuals in space
+
+In the approach I took to model envenomings using all grid cells as data I assumed that all observations are independent. Upon analysing residuals it is possible to see that this is not true. In previous attempts I tried to model the effect of space, but this was not possible due to the large number of data points. Regardless of the independence assumption violation here I show where the model is over or under estimating the number of envenoming cases and their incidence. First is the number of envenoming cases:
+
+```{r Residuals in space, fig.height=6.5, fig.width=8, warning = F, echo = F}
+resid.env <- envs.r[[2]] - envs.r[[1]]
+resid.env <- resid.env/cellStats(resid.env, sd)
+
+resid.inc <- env.incid.r[[2]] - env.incid.r[[1]]
+resid.inc <- resid.inc/cellStats(resid.inc, sd)
+
+resids.r <- stack(resid.env, resid.inc)
+names(resids.r) <- c("Envenomings", "Incidence")
+
+levelplot(resids.r, main = "Standardised residuals",  col.regions = cool(50), 
+          at = seq(-7, 7, len = 50),
+          margin = F, contour = F)
+```
+
+The absolute deviation between data and the model is further presented as root mean squared error in each Sri Lankan district. RMSE represents the average size of the error in the same units as the data, thus the map below shows the average incidence difference between model and data.
+
+```{r fig.height=6, fig.width=4, echo = F, message = F, warning = F, fig.align="center"}
+sla.districts <- readOGR("../Data/Sri Lanka boundaries/LKA_adm1.shp")
+sla.dist.sld99 <- spTransform(sla.districts, CRSobj = CRS("+init=epsg:5235"))
+
+mse.regions <- foreach(i = 1:nrow(sla.dist.sld99), .combine = c) %do% {
+  name <- sla.dist.sld99$NAME_1
+  pol <- subset(sla.dist.sld99, NAME_1 == name[i])
+  extr <- extract(env.incid.r, pol)
+  err <- sqrt(mean(na.omit((extr[[1]][, 1] - extr[[1]][, 2])^2)))
+  return(err)
+}
+sla.dist.sld99$rmse.env <- mse.regions
+sla.fort <- fortify(sla.dist.sld99)
+sla.fort$id <- as.numeric(sla.fort$id)
+sla.fort$id <- as.character(sla.fort$id + 1)
+sla.dist.sld99@data$id <- sla.dist.sld99@data$ID_1
+
+sla.fort <- merge(sla.fort, sla.dist.sld99@data, by = "id")
+
+library(ggplot2)
+ggplot(sla.fort, aes(x = long, y = lat, group = group, fill = rmse.env)) + geom_polygon(colour = "white") +
+  coord_equal()
+```
+
+```{r, echo = F}
+saveRDS(sla.fort, "../Model-results/SLA-districts-CAR-RMSE-envs.rds")
+```
+

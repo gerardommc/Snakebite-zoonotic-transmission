@@ -1,0 +1,8 @@
+"0","saveRDS(sla.fort, ""Model-results/SLA-disctricts-CAR-RMSE.rds"")"
+"2","Warning in gzfile(file, mode) :"
+"2","
+ "
+"2"," cannot open compressed file 'Model-results/SLA-disctricts-CAR-RMSE.rds', probable reason 'No existe el archivo o el directorio'
+"
+"2","Error in gzfile(file, mode) : no se puede abrir la conexión
+"

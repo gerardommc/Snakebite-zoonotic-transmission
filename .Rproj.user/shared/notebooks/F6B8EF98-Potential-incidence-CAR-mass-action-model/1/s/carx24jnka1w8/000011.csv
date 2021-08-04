@@ -1,0 +1,7 @@
+"0","ind.melt$rel.abund <- sapply(1:nrow(ind.melt), 
+                             function(x){
+                                   rel.abund$Average[abund.agr.df$Spp == ind.melt$variable[x]]
+                             })
+"
+"2","Error in rel.abund$Average : $ operator is invalid for atomic vectors
+"
