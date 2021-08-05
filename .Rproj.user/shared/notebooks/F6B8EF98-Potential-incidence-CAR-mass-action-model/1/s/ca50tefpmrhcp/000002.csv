@@ -1,6 +1,0 @@
-"0","incid.fun.1 <- function(H.log, H.tot, S.s, beta0, beta1){"
-"0","      Beta <- exp(+ beta0 + beta1 * H.log^2)"
-"0","      P <- 1 - exp( - Beta * S.s)"
-"0","      H.bit <- P * H.tot"
-"0","      return(H.bit)"
-"0","}"

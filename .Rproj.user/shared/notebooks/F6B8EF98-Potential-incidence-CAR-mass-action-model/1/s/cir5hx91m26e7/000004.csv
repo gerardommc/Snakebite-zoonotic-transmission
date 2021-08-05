@@ -1,2 +1,0 @@
-"0","cool <- colorRampPalette(c(""orangered1"", ""goldenrod1"", ""darkturquoise""))"
-"0","levelplot(bite.incid, col.regions = rev(cool(100)), at = seq(0, 0.012, len = 100), main = ""Snakebite incidence"")"

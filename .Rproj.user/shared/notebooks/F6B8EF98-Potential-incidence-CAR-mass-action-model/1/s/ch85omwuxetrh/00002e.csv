@@ -1,3 +1,0 @@
-"0",""
-"0","plot(cor.tests.df$Model.bites, resids/sd(resids), main = ""Residuals vs bites"", xlab = ""Predicted number of bites"", ylab = ""Standardised residuals"","
-"0","     pch = 20, col = ""grey90"", cex = 0.75)"

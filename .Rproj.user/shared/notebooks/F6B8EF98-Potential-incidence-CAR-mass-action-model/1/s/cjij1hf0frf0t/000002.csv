@@ -1,3 +1,0 @@
-"0","ggplot(ind.melt) + geom_boxplot(aes(x = log10(Abund.agr), y = Indices * aggressiveness/100, fill = variable, colour = variable), alpha = 0.6) +"
-"0","  labs(x = ""log10 Relative abundance x aggressiveness"","
-"0","       y = ""Fitted effect"")"

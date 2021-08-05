@@ -1,3 +1,0 @@
-"0","ggplot(ind.melt) + geom_boxplot(aes(x = aggressiveness, y = Indices * aggressiveness/100, fill = variable, colour = variable), alpha = 0.6) +"
-"0","  labs(x = ""Aggressiveness"","
-"0","       y = ""Fitted effect"")"

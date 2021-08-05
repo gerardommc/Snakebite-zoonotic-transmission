@@ -1,7 +1,0 @@
-"0","beta0.melt <- melt(beta0)"
-"2","No id variables; using all as measure variables
-"
-"0","names(beta0.melt) <- c(""Class"", ""Beta"")"
-"0","ggplot(beta0.melt) + geom_boxplot(aes(y = Beta, x = Class, fill = Class, colour = Class), alpha = 0.3) + "
-"0","      labs(y = expression(beta[0])) + guides(fill = F, colour = F) +"
-"0","      theme(axis.text.x = element_text(angle = 45, hjust = 1)) "

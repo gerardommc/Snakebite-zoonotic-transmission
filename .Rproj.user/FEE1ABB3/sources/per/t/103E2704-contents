@@ -275,9 +275,9 @@ rho.b.pl <- ggplot(rho.b.df) + geom_raster(aes(x = x, y = y, fill = Rho)) +
          legend.key.width = unit(7.5, units = "mm"),
          plot.title = element_text(size = 20,
                                    hjust = 0.5),
-         axis.text = element_text(size = 12),
-         axis.text.x = element_text(angle = 45, hjust = 1),
-         axis.title = element_text(face = "plain", size = 12))
+         axis.ticks = element_blank(),
+         axis.text = element_text(size = 0),
+         axis.title = element_text(size = 0))
 
 rho.e.pl <- ggplot(rho.e.df) + geom_raster(aes(x = x, y = y, fill = Rho)) +
    scale_fill_gradientn(colours = rev(cool(100))) +
@@ -294,9 +294,9 @@ rho.e.pl <- ggplot(rho.e.df) + geom_raster(aes(x = x, y = y, fill = Rho)) +
          legend.key.width = unit(7.5, units = "mm"),
          plot.title = element_text(size = 20,
                                    hjust = 0.5),
-         axis.text = element_text(size = 12),
-         axis.text.x = element_text(angle = 45, hjust = 1),
-         axis.title = element_text(face = "plain", size = 12))
+         axis.ticks = element_blank(),
+         axis.text = element_text(size = 0),
+         axis.title = element_text(size = 0))
 
 pdf("Figures/Rho-snakebites.pdf", width = 7.5/2, height = 21/4)
    rho.b.pl
@@ -326,9 +326,9 @@ rmse.sb.pl <- ggplot(rmse.sb, aes(x = long, y = lat, group = group, fill = rmse)
          legend.key.width = unit(7.5, units = "mm"),
          plot.title = element_text(size = 20,
                                    hjust = 0.5),
-         axis.text = element_text(size = 12),
-         axis.text.x = element_text(angle = 45, hjust = 1),
-         axis.title = element_text(face = "plain", size = 12))
+         axis.ticks = element_blank(),
+         axis.text = element_text(size = 0),
+         axis.title = element_text(size = 0))
 
 rmse.env.pl <- ggplot(rmse.env, aes(x = long, y = lat, group = group, fill = rmse.env)) + 
    geom_polygon(colour = "grey50") +
@@ -343,9 +343,9 @@ rmse.env.pl <- ggplot(rmse.env, aes(x = long, y = lat, group = group, fill = rms
          legend.key.width = unit(7.5, units = "mm"),
          plot.title = element_text(size = 20,
                                    hjust = 0.5),
-         axis.text = element_text(size = 12),
-         axis.text.x = element_text(angle = 45, hjust = 1),
-         axis.title = element_text(face = "plain", size = 12))
+         axis.ticks = element_blank(),
+         axis.text = element_text(size = 0),
+         axis.title = element_text(size = 0))
 
 pdf("Figures/RMSE-snakebites.pdf", width = 7.5/2, height = 21/4)
    rmse.sb.pl
@@ -355,7 +355,59 @@ pdf("Figures/RMSE-envenomings.pdf", width = 7.5/2, height = 21/4)
    rmse.env.pl
 dev.off()
 
-## Survey data 
+## Residuals
+
+## Incidence estimates
+
+res.bit.inc <- ggplot(incid.df) + geom_raster(aes(x = x, y = y, fill = (data - model))) +
+   scale_fill_gradientn(colours = rev(cool(100))) +
+   geom_polygon(data = sl,
+                aes(x=long, y=lat, group = group),
+                fill=NA, color="grey50", size=1.25) +
+   coord_fixed(ratio = 1) + 
+   labs(fill = "", title = "Estimates residuals")+
+   theme(panel.background =  element_rect(colour = NA, fill = NA),
+         legend.position = c(0.95, 0.75),
+         legend.background = element_rect("transparent"),
+         legend.text = element_text(size = 12),
+         legend.key.height = unit(5, units = "mm"),
+         legend.key.width = unit(7.5, units = "mm"),
+         plot.title = element_text(size = 20,
+                                   hjust = 0.5),
+         axis.ticks = element_blank(),
+         axis.text = element_text(size = 0),
+         axis.title = element_text(size = 0))
+
+res.env.inc <- ggplot(env.inc.df) + geom_raster(aes(x = x, y = y, fill = (data - model))) +
+   scale_fill_gradientn(colours = rev(cool(100))) +
+   geom_polygon(data = sl,
+                aes(x=long, y=lat, group = group),
+                fill=NA, color="grey50", size=1.25) +
+   coord_fixed(ratio = 1) + 
+   labs(fill = "", title = "Estimates residuals")+
+   theme(panel.background =  element_rect(colour = NA, fill = NA),
+         legend.position = c(0.95, 0.75),
+         legend.background = element_rect("transparent"),
+         legend.text = element_text(size = 12),
+         legend.key.height = unit(5, units = "mm"),
+         legend.key.width = unit(7.5, units = "mm"),
+         plot.title = element_text(size = 20,
+                                   hjust = 0.5),
+         axis.ticks = element_blank(),
+         axis.text = element_text(size = 0),
+         axis.title = element_text(size = 0))
+
+res.bit.inc
+res.env.inc
+
+pdf("Figures/Bite-incid-resids.pdf", width = 7.5/2, height = 21/4)
+res.bit.inc
+dev.off()
+
+pdf("Figures/Envenom-incid-resids.pdf", width = 7.5/2, height = 21/4)
+res.env.inc
+dev.off()
+### Survey data
 
 surv.data <- read.csv("Data/data.for.prevmap.csv")
 
@@ -381,10 +433,10 @@ surv.data.df$sb.resids <- with(surv.data.df, sb.prev - sb.pred)
 surv.data.df$env.resids <- with(surv.data.df, env.prev - env.pred)
 
 sb.res.pl <-ggplot() + geom_polygon(data = sl, aes(x = long, y = lat, group = group), fill = "lightgrey") +
-   geom_point(data = surv.data.df, aes(x = cluster_long, y = cluster_lat, size = sb.resids), shape = 1, alpha = 0.3)+
+   geom_point(data = surv.data.df, aes(x = cluster_long, y = cluster_lat, colour = sb.resids), shape = 20, size = 2)+
    scale_color_gradientn(colours = rev(cool(100))) +
    coord_equal() +
-   labs(x = "x", y = "y", title = "Survey data residuals", size = "") +
+   labs(x = "x", y = "y", title = "Survey data residuals", colour = "") +
    theme(panel.background =  element_rect(colour = NA, fill = NA),
          legend.position = c(0.9, 0.8),
          legend.background = element_rect("transparent"),
@@ -393,16 +445,16 @@ sb.res.pl <-ggplot() + geom_polygon(data = sl, aes(x = long, y = lat, group = gr
          legend.key.width = unit(7.5, units = "mm"),
          plot.title = element_text(size = 20,
                                    hjust = 0.5),
-         axis.text = element_text(size = 12),
-         axis.text.x = element_text(angle = 45, hjust = 1),
-         axis.title = element_text(face = "plain", size = 12))
+         axis.ticks = element_blank(),
+         axis.text = element_text(size = 0),
+         axis.title = element_text(size = 0))
 
 
 env.res.pl <-ggplot() + geom_polygon(data = sl, aes(x = long, y = lat, group = group), fill = "lightgrey") +
-   geom_point(data = surv.data.df, aes(x = cluster_long, y = cluster_lat, size = env.resids), shape = 1, alpha = 0.3)+
+   geom_point(data = surv.data.df, aes(x = cluster_long, y = cluster_lat, colour = env.resids), shape = 20, size = 2)+
    scale_color_gradientn(colours = rev(cool(100))) +
    coord_equal() +
-   labs(x = "x", y = "y", title = "Survey data residuals", size = "") +
+   labs(x = "x", y = "y", title = "Survey data residuals", colour = "") +
    theme(panel.background =  element_rect(colour = NA, fill = NA),
          legend.position = c(0.9, 0.8),
          legend.background = element_rect("transparent"),
@@ -411,9 +463,9 @@ env.res.pl <-ggplot() + geom_polygon(data = sl, aes(x = long, y = lat, group = g
          legend.key.width = unit(7.5, units = "mm"),
          plot.title = element_text(size = 20, 
                                    hjust = 0.5),
-         axis.text = element_text(size = 12),
-         axis.text.x = element_text(angle = 45, hjust = 1),
-         axis.title = element_text(face = "plain", size = 12))
+         axis.ticks = element_blank(),
+         axis.text = element_text(size = 0),
+         axis.title = element_text(size = 0))
 
 pdf("Figures/Survey-residuals-snakebites.pdf", width = 7.5/2, height = 21/4)
    sb.res.pl
@@ -422,5 +474,6 @@ dev.off()
 pdf("Figures/Survey-residuals-envenomings.pdf", width = 7.5/2, height = 21/4)
    env.res.pl
 dev.off()
+
 
 

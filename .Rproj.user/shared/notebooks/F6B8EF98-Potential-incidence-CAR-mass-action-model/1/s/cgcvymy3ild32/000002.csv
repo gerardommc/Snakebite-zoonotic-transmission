@@ -1,4 +1,0 @@
-"0",""
-"0","par(mfrow = c(1, 2))"
-"0","qqplot(x = cor.tests.df$Data.bites, y = cor.tests.df$Model.bites, main = ""QQ plot-bites"","
-"0","       xlab = ""Data"", ylab = ""Model"")"

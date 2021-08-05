@@ -1,6 +1,0 @@
-"0","library(ggplot2)"
-"0",""
-"0","ggplot(rates.resp.ints) + geom_line(aes(x = H.log, y = Median, colour = land.cover)) +"
-"0","      geom_ribbon(aes(x = H.log, ymin = low2.5, ymax = high97.5, fill = land.cover), alpha = 0.3) +"
-"0","      labs(x = ""log(Human density)"", y = ""Snake reduction"", title = ""Reduction of snake populations by land cover class"","
-"0","           colour = ""Land cover classes"", fill = ""Land cover classes"")"

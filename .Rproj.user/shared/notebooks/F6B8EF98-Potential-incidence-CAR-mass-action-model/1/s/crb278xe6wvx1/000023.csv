@@ -1,5 +1,0 @@
-"0",""
-"0","plot(cor.tests.df$Data.incidence, cor.tests.df$Model.incidence, main = ""Snakebite incidence"", "
-"0","     xlab = ""Data"", ylab = """",  pch = 20, "
-"0","     xlim = c(0, 0.013), ylim = c(0, 0.013),"
-"0","     col = alpha(""grey70"", 0.5), cex = 1.5)"

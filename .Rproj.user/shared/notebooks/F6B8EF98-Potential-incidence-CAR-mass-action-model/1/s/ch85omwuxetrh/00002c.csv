@@ -1,4 +1,0 @@
-"0",""
-"0","resids <- with(cor.tests.df, Data.bites - Model.bites)"
-"0","par(mfrow = c(1, 3))"
-"0","plot(density(na.omit(resids)/sd(resids)), main = ""Density of standardised residuals"")"

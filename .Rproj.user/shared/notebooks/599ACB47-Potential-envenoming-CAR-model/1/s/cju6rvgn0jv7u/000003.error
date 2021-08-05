@@ -1,1 +1,0 @@
-{"frames":[],"message":"Error in gelman.diag(as.mcmc.list(fixed.effects)) : \n  no se pudo encontrar la función \"gelman.diag\"\n"}

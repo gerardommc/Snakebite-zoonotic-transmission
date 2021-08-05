@@ -1,1 +1,0 @@
-"0","text(x = 0.005, y = 0.0065, paste0(""r = "", round(cor.incid$corr, 2), "" d.f. = "", round(cor.incid$dof, 1), "", P = "", round(cor.incid$p.value, 2)))"

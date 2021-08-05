@@ -1,7 +1,0 @@
-"0","incid.fun <- function(H.log, H.tot, Species, beta0, beta1, indices){"
-"0","      S.sum <- apply(indices/100, 1, function(x){sum(x * Species)})      "
-"0","      Beta <- exp(log(100) + beta0 + beta1 * H.log^2)"
-"0","      P <-1 - exp(-Beta * S.sum)"
-"0","      H.bit <- P * H.tot"
-"0","      return(H.bit)"
-"0","}"
