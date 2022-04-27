@@ -101,6 +101,11 @@ names(rho.stack) <- c("rho", "Geweke convergence")
 plot(rho.stack)
 ```
 
+```{r echo = F}
+writeRaster(rho.diag, "../Model-results/Spatial/Snakebites/Rho-Geweke", "ascii")
+```
+
+
 ## Model predictions
 
 ```{r}
@@ -342,6 +347,10 @@ levelplot(resids.r, main = "Standardised residuals",
           at = seq(-12, 7, len = 50), margin = F, contour = F)
 ```
 
+```{r echo = F}
+writeRaster(resid.incid.r, "../Model-results/Spatial/Snakebites/Incidence-residuals", "ascii")
+```
+
 The left side shows the standardised residuals of snakebite numbers, and the residuals of incidence on the right hand side. In both cases residuals are close to zero, but depart from the mean by as much as 12 standard deviations, and tend to be clustered. The predominantly negative values mean that the model underestimates both the number of snakebites and incidence, especially in areas where incidence is high.
 
 The absolute deviation between data and the model is further presented as root mean squared error in each Sri Lankan district. RMSE represents the average size of the error in the same units as the data, thus the map below shows the average incidence difference between model and data.
@@ -370,8 +379,10 @@ library(ggplot2)
 ggplot(sla.fort, aes(x = long, y = lat, group = group, fill = rmse)) + geom_polygon(colour = "white") +
   coord_equal()
 ```
+
 ```{r, echo = F}
 saveRDS(sla.fort, "../Model-results/SLA-disctricts-CAR-RMSE.rds")
+writeOGR(obj = sla.dist.sld99, dsn ="../Model-results/Spatial/Snakebites/RMSE/", "/RMSE-Bites/", driver = "ESRI Shapefile")
 ```
 
 ## Responses fitted by the model

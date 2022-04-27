@@ -109,6 +109,10 @@ names(rho.stack) <- c("rho", "Geweke convergence")
 plot(rho.stack)
 ```
 
+```{r echo = F}
+writeRaster(rho.diag.r, "../Model-results/Spatial/Envenomings/Rho-Geweke", "ascii")
+```
+
 
 The tests show in agreement with the `Rhat` column of the model summary, that all chains mixed well and converged.
 
@@ -256,7 +260,6 @@ Comparing the fitted effects and the relative abundance and bite severity indice
 
 ```{r, echo = F, warning = F, results = "hide"}
 library(reshape2); library(ggplot2); library(readODS)
-x.ints
 indices.df <- data.frame(x.seffs)
 
 names(indices.df) <- c("Bungarus caeruleus", "Bungarus ceylonicus",
@@ -380,5 +383,7 @@ ggplot(sla.fort, aes(x = long, y = lat, group = group, fill = rmse.env)) + geom_
 
 ```{r, echo = F}
 saveRDS(sla.fort, "../Model-results/SLA-districts-CAR-RMSE-envs.rds")
+writeOGR(obj = sla.dist.sld99, dsn ="../Model-results/Spatial/Envenomings/RMSE/", "RMSE-Envenomings", 
+         driver = "ESRI Shapefile")
 ```
 
