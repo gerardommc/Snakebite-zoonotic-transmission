@@ -355,6 +355,11 @@ levelplot(resids.r, main = "Standardised residuals",  col.regions = cool(50),
           margin = F, contour = F)
 ```
 
+```{r}
+writeRaster(resid.inc, "../Model-results/Spatial/Envenomings/Incidence-Residuals", "ascii")
+```
+
+
 The absolute deviation between data and the model is further presented as root mean squared error in each Sri Lankan district. RMSE represents the average size of the error in the same units as the data, thus the map below shows the average incidence difference between model and data.
 
 ```{r fig.height=6, fig.width=4, echo = F, message = F, warning = F, fig.align="center"}
